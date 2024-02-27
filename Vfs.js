@@ -35,7 +35,7 @@ function normalize_path(path) {
 export class Vfs {
     constructor() {
         this.node_id = 0;
-        this.root = new VfsNode("", {id: this.node_id++});
+        this.root = new VfsNode("", {id: this.node_id++, type: "folder"});
         this.mount_points = [];
     }
 
@@ -101,7 +101,7 @@ export class Vfs {
         if (mount_point == null) {
             return this._write_file_memfs(this.root, rest, blob);            
         } else if (mount_point.type == "local") {
-            return this._write_file_local(mount_point, rest, blob);            
+            return this._write_file_local(mount_point, rest, file_name, blob);            
         }
     }
 
@@ -175,6 +175,7 @@ export class Vfs {
 
     async _mkdir_local(mount, path) {
         let [handler, node, rest] = this._closest_directory_handler_local(mount.root, path);
+
         if (handler == null) {
             return null;
         }
@@ -186,14 +187,18 @@ export class Vfs {
             node.metadata.directoryHandle = new_handler;
             handler = new_handler;
         }
-        return node
+        return node;
     }
 
-    async _write_file_local(mount, path, blob) {
-        let [handler, node, rest] = this._closest_directory_handler_local(mount.root, path);
-        if (handler == null) {
-            return null;
-        }
-        this._push(node, rest, {type: "file"});
+    async _write_file_local(mount, path, file_name, blob) {
+        const pdir = await this._mkdir_local(mount, path);
+        const fh = await pdir.metadata.directoryHandle.getFileHandle(file_name, {create: true});
+        
+        const writable = await fh.createWritable();
+        await writable.write(blob);
+        await writable.close();
+
+        const blob_with_handler = fh.getFile();
+        return this._push(pdir, file_name, {type: "file", blob: blob_with_handler });
     }
 }
